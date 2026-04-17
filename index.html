@@ -160,6 +160,96 @@ function pillStyle(active, color = ZIPO) {
   };
 }
 
+// ---------- Bar chart primitives ----------
+// Single horizontal bar row. Width scales relative to `max`.
+// Zipo gets a slightly heavier treatment; Uber/Bolt sit more muted.
+function ComparisonBarRow({ model, fare, max, isCheapest, dense = false }) {
+  const pct = max > 0 ? (fare / max) * 100 : 0;
+  const isZipo = model.platform === "zipo";
+  const rowHeight = dense ? 22 : 26;
+  const labelWidth = dense ? 90 : 108;
+
+  // Zipo: solid tinted fill. Uber/Bolt: lighter, more muted fill.
+  const fillBg = isZipo
+    ? `linear-gradient(90deg, ${model.color}cc, ${model.color}99)`
+    : `${model.color}55`;
+  const fillBorder = isZipo ? `${model.color}` : `${model.color}66`;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, height: rowHeight }}>
+      <div style={{
+        width: labelWidth, flexShrink: 0,
+        fontSize: dense ? 11 : 12, fontWeight: isZipo ? 700 : 600,
+        color: isZipo ? model.color : "#8a8f98",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        letterSpacing: "-0.01em",
+      }} title={model.name}>
+        {model.name}
+      </div>
+      <div style={{
+        flex: 1, height: dense ? 14 : 16, background: "#0f1116",
+        borderRadius: 4, border: "1px solid #1a1d24", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{
+          width: `${pct}%`, height: "100%",
+          background: fillBg,
+          borderRight: `1px solid ${fillBorder}`,
+          borderRadius: 3,
+          transition: "width 0.25s ease",
+        }} />
+      </div>
+      <div style={{
+        width: dense ? 64 : 72, flexShrink: 0, textAlign: "right",
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: dense ? 12 : 13, fontWeight: isCheapest ? 800 : 600,
+        color: isCheapest ? model.color : "#e0e2e6",
+        letterSpacing: "-0.02em",
+      }}>
+        {"\u00A3"}{fmt(fare)}
+      </div>
+    </div>
+  );
+}
+
+// Chart for one cluster — 3 rows (Zipo, Uber, Bolt).
+function ComparisonBarChart({ cluster, distance, duration, dense = false, showHeader = false }) {
+  const { zipo, uber, bolt } = cluster.models;
+  const rows = [
+    { m: zipo, f: calcFare(zipo, distance, duration) },
+    { m: uber, f: calcFare(uber, distance, duration) },
+    { m: bolt, f: calcFare(bolt, distance, duration) },
+  ];
+  const max = Math.max(...rows.map((r) => r.f));
+  const min = Math.min(...rows.map((r) => r.f));
+
+  return (
+    <div>
+      {showHeader && (
+        <div style={{ marginBottom: 10 }}>
+          <h4 style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: "-0.01em", color: "#e0e2e6" }}>
+            {cluster.name}
+          </h4>
+          <p style={{ margin: "1px 0 0", fontSize: 10, color: "#5a5f68", fontWeight: 500 }}>
+            {cluster.zipoMap} &middot; {cluster.uberMap} &middot; {cluster.boltMap}
+          </p>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: dense ? 6 : 8 }}>
+        {rows.map(({ m, f }) => (
+          <ComparisonBarRow
+            key={m.id}
+            model={m}
+            fare={f}
+            max={max}
+            isCheapest={f === min}
+            dense={dense}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Reusable Field ----------
 function Field({ label, value, onChange, unit, min = 0, step = 0.01, accent = ZIPO }) {
   return (
@@ -233,7 +323,7 @@ function FareCard({ model, fare, cheapest, isCheapest, compact = false }) {
 }
 
 // ---------- Cluster Comparison (3 fare cards + insight strip) ----------
-function ClusterComparison({ cluster, distance, duration, compact = false }) {
+function ClusterComparison({ cluster, distance, duration, compact = false, showChart = true }) {
   const { zipo, uber, bolt } = cluster.models;
   const zipoFare = calcFare(zipo, distance, duration);
   const uberFare = calcFare(uber, distance, duration);
@@ -277,6 +367,16 @@ function ClusterComparison({ cluster, distance, duration, compact = false }) {
           <FareCard key={m.id} model={m} fare={f} cheapest={cheapest} isCheapest={f === cheapest} compact />
         ))}
       </div>
+
+      {/* Bar chart — proportional visual of the same 3 fares */}
+      {showChart && (
+        <div style={{
+          padding: "12px 14px", background: "#0f1116", borderRadius: 8,
+          border: "1px solid #1a1d24", marginBottom: 12,
+        }}>
+          <ComparisonBarChart cluster={cluster} distance={distance} duration={duration} />
+        </div>
+      )}
 
       {/* Insight strip */}
       <div style={{
@@ -523,6 +623,58 @@ function Stat({ label, value, accent }) {
   );
 }
 
+// ---------- Batch summary chart (optional, collapsible) ----------
+// For each visible cluster, shows avg fare across all preset trips as 3 bars (Zipo/Uber/Bolt).
+function BatchSummaryChart({ clusters, trips, activeClusterId }) {
+  const shown = activeClusterId === "all" ? clusters : clusters.filter((c) => c.id === activeClusterId);
+
+  // Per-cluster averages
+  const perCluster = shown.map((c) => {
+    const avg = (platform) => trips.reduce((sum, t) => sum + calcFare(c.models[platform], t.distance, t.duration), 0) / trips.length;
+    return { cluster: c, zipo: avg("zipo"), uber: avg("uber"), bolt: avg("bolt") };
+  });
+
+  // Global max across everything shown, so bar widths are comparable between clusters
+  const globalMax = Math.max(...perCluster.flatMap((p) => [p.zipo, p.uber, p.bolt]));
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 12 }}>
+      {perCluster.map(({ cluster, zipo, uber, bolt }) => {
+        const rows = [
+          { m: cluster.models.zipo, f: zipo },
+          { m: cluster.models.uber, f: uber },
+          { m: cluster.models.bolt, f: bolt },
+        ];
+        const localMin = Math.min(zipo, uber, bolt);
+        return (
+          <div key={cluster.id} style={{ ...cardSubtle, padding: 14 }}>
+            <div style={{ marginBottom: 10 }}>
+              <h4 style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: "-0.01em", color: "#e0e2e6" }}>
+                {cluster.name}
+              </h4>
+              <p style={{ margin: "1px 0 0", fontSize: 10, color: "#5a5f68", fontWeight: 500 }}>
+                Avg fare across {trips.length} scenarios
+              </p>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {rows.map(({ m, f }) => (
+                <ComparisonBarRow
+                  key={m.id}
+                  model={m}
+                  fare={f}
+                  max={globalMax}
+                  isCheapest={f === localMin}
+                  dense
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------- Main App ----------
 function App() {
   const [clusters, setClusters] = useState(() => loadFromStorage(STORAGE_KEY, DEFAULT_CLUSTERS));
@@ -530,6 +682,8 @@ function App() {
   const [duration, setDuration] = useState(20);
   const [mode, setMode] = useState("single"); // single | batch
   const [activeCluster, setActiveCluster] = useState("all"); // all | cluster.id
+  const [viewMode, setViewMode] = useState("cards"); // cards | charts | both — only used when activeCluster === "all"
+  const [showBatchChart, setShowBatchChart] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(clusters)); } catch {}
@@ -719,30 +873,100 @@ function App() {
         <React.Fragment>
           {activeCluster === "all" && (
             <React.Fragment>
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                 <h2 style={sectionLabel}>Overview &mdash; All Clusters</h2>
+                <div style={{ display: "flex", gap: 4, background: "#12141a", border: "1px solid #1e2128", borderRadius: 8, padding: 3 }}>
+                  {[
+                    { id: "cards",  label: "Cards"  },
+                    { id: "charts", label: "Charts" },
+                    { id: "both",   label: "Both"   },
+                  ].map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setViewMode(v.id)}
+                      style={{
+                        ...btnStyle(viewMode === v.id ? ZIPO : "transparent", viewMode === v.id ? "#0c0e12" : "#8a8f98"),
+                        fontWeight: viewMode === v.id ? 700 : 500, fontSize: 11, padding: "5px 12px",
+                      }}
+                    >{v.label}</button>
+                  ))}
+                </div>
               </div>
               <TopSummary clusters={clusters} distance={distance} duration={duration} />
             </React.Fragment>
           )}
 
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: activeCluster === "all" ? "1fr" : "1fr",
-            gap: 16, marginBottom: 24,
-          }}>
-            {visibleClusters.map((c) => (
-              <ClusterComparison key={c.id} cluster={c} distance={distance} duration={duration} />
-            ))}
-          </div>
+          {/* Cards view (default for All, always for a single cluster) */}
+          {(activeCluster !== "all" || viewMode === "cards" || viewMode === "both") && (
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr",
+              gap: 16, marginBottom: viewMode === "both" && activeCluster === "all" ? 20 : 24,
+            }}>
+              {visibleClusters.map((c) => (
+                <ClusterComparison
+                  key={c.id}
+                  cluster={c}
+                  distance={distance}
+                  duration={duration}
+                  showChart={activeCluster !== "all" || viewMode === "both"}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Charts-only view — compact grid of all 5 clusters */}
+          {activeCluster === "all" && viewMode === "charts" && (
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+              gap: 12, marginBottom: 24,
+            }}>
+              {clusters.map((c) => (
+                <div key={c.id} style={{ ...card, padding: 16 }}>
+                  <ComparisonBarChart
+                    cluster={c}
+                    distance={distance}
+                    duration={duration}
+                    dense
+                    showHeader
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </React.Fragment>
       )}
 
       {mode === "batch" && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <h2 style={sectionLabel}>Batch Scenario Matrix</h2>
+            <button
+              onClick={() => setShowBatchChart((v) => !v)}
+              style={{
+                ...btnStyle(showBatchChart ? ZIPO : "#1a1d24", showBatchChart ? "#0c0e12" : "#8a8f98"),
+                fontSize: 11, padding: "5px 12px", fontWeight: showBatchChart ? 700 : 500,
+              }}
+            >
+              {showBatchChart ? "\u2212 Hide" : "+ Show"} summary chart
+            </button>
           </div>
+
+          {showBatchChart && (
+            <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+              <div style={{ marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: "-0.01em", color: "#e0e2e6" }}>
+                  Average fare by platform
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#5a5f68", fontWeight: 500 }}>
+                  Mean fare across all {TRIP_PRESETS.length} preset trips, per cluster. Bars scaled to global max.
+                </p>
+              </div>
+              <BatchSummaryChart clusters={clusters} trips={TRIP_PRESETS} activeClusterId={activeCluster} />
+            </div>
+          )}
+
           <BatchMatrix clusters={clusters} trips={TRIP_PRESETS} activeClusterId={activeCluster} />
         </div>
       )}
