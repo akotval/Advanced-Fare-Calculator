@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zipo Fare Calculator</title>
+<title>Zipo Fare Calculator (Advanced)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -28,43 +28,118 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useMemo } = React;
 
-const STORAGE_KEY = "zipo_fare_models";
+const STORAGE_KEY = "zipo_fare_clusters_v2";
 
-const DEFAULT_MODELS = [
-  { id: "zipo", name: "Zipo", color: "#4DB6AC", baseFare: 2.5, perMinute: 0.15, perMile: 1.93, surge: 1.0, minFare: 5.0, bookingFee: 0 },
-  { id: "uber", name: "Uber", color: "#F06292", baseFare: 2.5, perMinute: 0.2, perMile: 2.01, surge: 1.0, minFare: 6.5, bookingFee: 2.0 },
-  { id: "bolt", name: "Bolt", color: "#42A5F5", baseFare: 2.0, perMinute: 0.18, perMile: 1.85, surge: 1.0, minFare: 5.0, bookingFee: 1.5 },
+// ---------- Brand palette ----------
+const ZIPO = "#4DB6AC";
+const UBER = "#F06292";
+const BOLT = "#42A5F5";
+
+// ---------- Default cluster data ----------
+// Reasonable London PHV placeholder pricing. All editable in UI.
+const DEFAULT_CLUSTERS = [
+  {
+    id: "standard",
+    name: "Standard",
+    description: "Everyday city rides",
+    zipoMap: "Zipo Standard",
+    uberMap: "UberX",
+    boltMap: "Bolt Standard",
+    models: {
+      zipo: { id: "zipo_standard", platform: "zipo", name: "Zipo Standard", color: ZIPO, baseFare: 2.50, perMinute: 0.15, perMile: 1.93, surge: 1.0, minFare: 5.00, bookingFee: 0.00 },
+      uber: { id: "uber_x",        platform: "uber", name: "UberX",         color: UBER, baseFare: 2.50, perMinute: 0.20, perMile: 2.01, surge: 1.2, minFare: 6.50, bookingFee: 2.00 },
+      bolt: { id: "bolt_standard", platform: "bolt", name: "Bolt Standard", color: BOLT, baseFare: 2.00, perMinute: 0.18, perMile: 1.85, surge: 1.15, minFare: 5.00, bookingFee: 1.50 },
+    },
+  },
+  {
+    id: "electric",
+    name: "Electric",
+    description: "Zero-emission vehicles",
+    zipoMap: "Zipo Electric",
+    uberMap: "Uber Green",
+    boltMap: "Bolt Electric",
+    models: {
+      zipo: { id: "zipo_electric", platform: "zipo", name: "Zipo Electric", color: ZIPO, baseFare: 2.75, perMinute: 0.17, perMile: 2.05, surge: 1.0, minFare: 5.50, bookingFee: 0.00 },
+      uber: { id: "uber_green",    platform: "uber", name: "Uber Green",    color: UBER, baseFare: 2.75, perMinute: 0.22, perMile: 2.15, surge: 1.2, minFare: 7.00, bookingFee: 2.00 },
+      bolt: { id: "bolt_electric", platform: "bolt", name: "Bolt Electric", color: BOLT, baseFare: 2.25, perMinute: 0.20, perMile: 1.98, surge: 1.15, minFare: 5.50, bookingFee: 1.50 },
+    },
+  },
+  {
+    id: "xl",
+    name: "XL",
+    description: "Up to 6 passengers",
+    zipoMap: "Zipo XL",
+    uberMap: "UberXL",
+    boltMap: "Bolt XL",
+    models: {
+      zipo: { id: "zipo_xl", platform: "zipo", name: "Zipo XL", color: ZIPO, baseFare: 3.50, perMinute: 0.22, perMile: 2.80, surge: 1.0, minFare: 8.00, bookingFee: 0.00 },
+      uber: { id: "uber_xl", platform: "uber", name: "UberXL",  color: UBER, baseFare: 3.50, perMinute: 0.30, perMile: 3.05, surge: 1.25, minFare: 10.00, bookingFee: 2.50 },
+      bolt: { id: "bolt_xl", platform: "bolt", name: "Bolt XL", color: BOLT, baseFare: 3.00, perMinute: 0.26, perMile: 2.75, surge: 1.2, minFare: 8.50, bookingFee: 2.00 },
+    },
+  },
+  {
+    id: "executive",
+    name: "Executive",
+    description: "Premium saloons, pro drivers",
+    zipoMap: "Zipo Executive",
+    uberMap: "Uber Exec",
+    boltMap: "Bolt Executive",
+    models: {
+      zipo: { id: "zipo_exec", platform: "zipo", name: "Zipo Executive", color: ZIPO, baseFare: 4.00, perMinute: 0.30, perMile: 3.40, surge: 1.0, minFare: 12.00, bookingFee: 0.00 },
+      uber: { id: "uber_exec", platform: "uber", name: "Uber Exec",      color: UBER, baseFare: 4.00, perMinute: 0.40, perMile: 3.75, surge: 1.3, minFare: 15.00, bookingFee: 3.00 },
+      bolt: { id: "bolt_exec", platform: "bolt", name: "Bolt Executive", color: BOLT, baseFare: 3.50, perMinute: 0.35, perMile: 3.30, surge: 1.25, minFare: 13.00, bookingFee: 2.50 },
+    },
+  },
+  {
+    id: "executive_xl",
+    name: "Executive XL",
+    description: "Premium 6-seaters, luxury SUVs",
+    zipoMap: "Zipo Executive XL",
+    uberMap: "Uber Exec XL",
+    boltMap: "Bolt XL (Premium)",
+    models: {
+      zipo: { id: "zipo_exec_xl", platform: "zipo", name: "Zipo Executive XL", color: ZIPO, baseFare: 5.00, perMinute: 0.40, perMile: 4.20, surge: 1.0, minFare: 16.00, bookingFee: 0.00 },
+      uber: { id: "uber_exec_xl", platform: "uber", name: "Uber Exec XL",      color: UBER, baseFare: 5.00, perMinute: 0.55, perMile: 4.65, surge: 1.3, minFare: 20.00, bookingFee: 3.50 },
+      bolt: { id: "bolt_xl_prem", platform: "bolt", name: "Bolt XL Premium",   color: BOLT, baseFare: 4.50, perMinute: 0.48, perMile: 4.10, surge: 1.25, minFare: 17.00, bookingFee: 3.00 },
+    },
+  },
 ];
 
-const PRESETS = [
-  { label: "Short (1.2 mi / 8 min)", distance: 1.2, duration: 8 },
-  { label: "Medium (5 mi / 20 min)", distance: 5, duration: 20 },
-  { label: "Long (12.5 mi / 40 min)", distance: 12.5, duration: 40 },
-  { label: "Airport (22 mi / 55 min)", distance: 22, duration: 55 },
+const TRIP_PRESETS = [
+  { label: "Short Urban",         distance: 1.5,  duration: 9  },
+  { label: "Commuter",            distance: 4.5,  duration: 22 },
+  { label: "Weekend Cross-Town",  distance: 7.8,  duration: 32 },
+  { label: "Airport Run",         distance: 18.0, duration: 50 },
+  { label: "Long Outer-London",   distance: 26.0, duration: 70 },
 ];
 
-const BATCH_TRIPS = [
-  { label: "School run", distance: 1.9, duration: 10 },
-  { label: "City centre", distance: 3.7, duration: 18 },
-  { label: "Cross-town", distance: 7.5, duration: 30 },
-  { label: "Heathrow", distance: 18.6, duration: 50 },
-  { label: "Gatwick", distance: 28, duration: 65 },
-];
-
+// ---------- Pure helpers ----------
 function calcFare(model, distance, duration) {
   const before = model.baseFare + model.perMinute * duration + model.perMile * distance + (model.bookingFee || 0);
   const after = before * (model.surge || 1);
   return Math.max(after, model.minFare || 0);
 }
 
-function fmt(n) { return n.toFixed(2); }
+const fmt = (n) => n.toFixed(2);
+const fmtPct = (n) => (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 
 function loadFromStorage(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
   catch { return fallback; }
 }
+
+function platformColor(p) { return p === "zipo" ? ZIPO : p === "uber" ? UBER : BOLT; }
+function platformLabel(p) { return p === "zipo" ? "Zipo" : p === "uber" ? "Uber" : "Bolt"; }
+
+// ---------- Style tokens (kept identical to v1) ----------
+const card = { background: "#12141a", borderRadius: 12, border: "1px solid #1e2128", padding: 20 };
+const cardSubtle = { background: "#0f1116", borderRadius: 10, border: "1px solid #1a1d24", padding: 16 };
+const thStyle = { textAlign: "left", padding: "10px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5a5f68", fontWeight: 700, borderBottom: "1px solid #1e2128" };
+const tdStyle = { padding: "10px 14px", borderBottom: "1px solid #1a1d24", fontSize: 13 };
+const sectionLabel = { margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#8a8f98" };
+const mutedLabel = { fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#8a8f98", fontWeight: 600 };
 
 function btnStyle(bg, fg) {
   return {
@@ -74,14 +149,22 @@ function btnStyle(bg, fg) {
   };
 }
 
-const card = { background: "#12141a", borderRadius: 12, border: "1px solid #1e2128", padding: 20 };
-const thStyle = { textAlign: "left", padding: "10px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5a5f68", fontWeight: 700, borderBottom: "1px solid #1e2128" };
-const tdStyle = { padding: "10px 14px", borderBottom: "1px solid #1a1d24", fontSize: 13 };
+function pillStyle(active, color = ZIPO) {
+  return {
+    background: active ? color : "#1a1d24",
+    color: active ? "#0c0e12" : "#8a8f98",
+    border: "none", borderRadius: 20,
+    padding: "6px 14px", fontSize: 12, fontWeight: active ? 700 : 500,
+    cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.02em",
+    transition: "all 0.15s",
+  };
+}
 
-function Field({ label, value, onChange, unit, min = 0, step = 0.01 }) {
+// ---------- Reusable Field ----------
+function Field({ label, value, onChange, unit, min = 0, step = 0.01, accent = ZIPO }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#8a8f98", fontWeight: 600 }}>{label}</label>
+      <label style={mutedLabel}>{label}</label>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {unit === "\u00A3" && <span style={{ color: "#5a5f68", fontSize: 13, fontWeight: 700 }}>{"\u00A3"}</span>}
         <input
@@ -93,7 +176,7 @@ function Field({ label, value, onChange, unit, min = 0, step = 0.01 }) {
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace", outline: "none",
             transition: "border-color 0.15s",
           }}
-          onFocus={(e) => (e.target.style.borderColor = "#4DB6AC")}
+          onFocus={(e) => (e.target.style.borderColor = accent)}
           onBlur={(e) => (e.target.style.borderColor = "#2a2d34")}
         />
         {unit && unit !== "\u00A3" && <span style={{ color: "#5a5f68", fontSize: 12, fontWeight: 600, minWidth: 28 }}>{unit}</span>}
@@ -102,56 +185,431 @@ function Field({ label, value, onChange, unit, min = 0, step = 0.01 }) {
   );
 }
 
-function App() {
-  const [models, setModels] = useState(() => loadFromStorage(STORAGE_KEY, DEFAULT_MODELS));
-  const [distance, setDistance] = useState(5);
-  const [duration, setDuration] = useState(20);
-  const [tab, setTab] = useState("single");
-
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(models)); } catch {}
-  }, [models]);
-
-  const updateModel = useCallback((id, field, value) => {
-    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
-  }, []);
-
-  const removeModel = useCallback((id) => {
-    setModels((prev) => prev.filter((m) => m.id !== id));
-  }, []);
-
-  const addModel = useCallback(() => {
-    const hues = [340, 200, 30, 280, 160, 60];
-    const hue = hues[models.length % hues.length];
-    setModels((prev) => [...prev, {
-      id: `model_${Date.now()}`, name: `Model ${models.length + 1}`,
-      color: `hsl(${hue}, 70%, 65%)`, baseFare: 2.0, perMinute: 0.15,
-      perMile: 1.6, surge: 1.0, minFare: 0, bookingFee: 0,
-    }]);
-  }, [models.length]);
-
-  const resetModels = useCallback(() => setModels(DEFAULT_MODELS), []);
-
-  const results = models.map((m) => ({ ...m, fare: calcFare(m, distance, duration) }));
-  const cheapest = Math.min(...results.map((r) => r.fare));
-
-  const exportCSV = () => {
-    const trips = tab === "batch" ? BATCH_TRIPS : [{ label: "Custom", distance, duration }];
-    let csv = "Trip,Distance (mi),Duration (min)," + models.map((m) => m.name + " (\u00A3)").join(",") + "\n";
-    trips.forEach((t) => {
-      const fares = models.map((m) => fmt(calcFare(m, t.distance, t.duration)));
-      csv += `"${t.label}",${t.distance},${t.duration},${fares.join(",")}\n`;
-    });
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = `zipo_fare_comparison_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click(); URL.revokeObjectURL(url);
-  };
+// ---------- Fare Card (result) ----------
+function FareCard({ model, fare, cheapest, isCheapest, compact = false }) {
+  const diff = fare - cheapest;
+  const pctDiff = cheapest > 0 ? (diff / cheapest) * 100 : 0;
+  const isZipo = model.platform === "zipo";
 
   return (
-    <div style={{ minHeight: "100vh", padding: "24px 16px", maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{
+      ...card,
+      padding: compact ? 16 : 20,
+      borderColor: isCheapest ? model.color + "55" : (isZipo ? "#1e2128" : "#1e2128"),
+      background: isZipo ? "#13171c" : "#12141a",
+      position: "relative", overflow: "hidden",
+    }}>
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: model.color }} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: compact ? 10 : 14, marginTop: 4, gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <span style={{ fontWeight: 800, fontSize: compact ? 14 : 15, color: model.color, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {model.name}
+          </span>
+          <span style={{ fontSize: 10, color: "#5a5f68", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            {platformLabel(model.platform)}
+          </span>
+        </div>
+        {isCheapest && (
+          <span style={{
+            fontSize: 9, fontWeight: 700, background: model.color + "22", color: model.color,
+            padding: "3px 8px", borderRadius: 20, letterSpacing: "0.06em", textTransform: "uppercase",
+            whiteSpace: "nowrap",
+          }}>Cheapest</span>
+        )}
+      </div>
+      <div style={{ fontSize: compact ? 26 : 32, fontWeight: 900, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.04em", marginBottom: 6 }}>
+        {"\u00A3"}{fmt(fare)}
+      </div>
+      {!isCheapest && (
+        <div style={{ fontSize: 12, color: "#F06292", fontWeight: 600 }}>
+          +{"\u00A3"}{fmt(diff)} <span style={{ color: "#8a8f98", fontWeight: 500 }}>({fmtPct(pctDiff)})</span>
+        </div>
+      )}
+      {isCheapest && (
+        <div style={{ fontSize: 12, color: "#5a5f68", fontWeight: 500 }}>Lowest in cluster</div>
+      )}
+    </div>
+  );
+}
 
+// ---------- Cluster Comparison (3 fare cards + insight strip) ----------
+function ClusterComparison({ cluster, distance, duration, compact = false }) {
+  const { zipo, uber, bolt } = cluster.models;
+  const zipoFare = calcFare(zipo, distance, duration);
+  const uberFare = calcFare(uber, distance, duration);
+  const boltFare = calcFare(bolt, distance, duration);
+  const fares = [
+    { m: zipo, f: zipoFare },
+    { m: uber, f: uberFare },
+    { m: bolt, f: boltFare },
+  ];
+  const cheapest = Math.min(zipoFare, uberFare, boltFare);
+  const cheapestName = fares.find((x) => x.f === cheapest).m.name;
+
+  const zipoVsUber = uberFare - zipoFare;
+  const zipoVsBolt = boltFare - zipoFare;
+  const zipoVsUberPct = uberFare > 0 ? (zipoVsUber / uberFare) * 100 : 0;
+  const zipoVsBoltPct = boltFare > 0 ? (zipoVsBolt / boltFare) * 100 : 0;
+
+  return (
+    <div style={{ ...card, padding: compact ? 16 : 20 }}>
+      {/* Cluster header */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: compact ? 15 : 17, fontWeight: 800, letterSpacing: "-0.02em", color: "#e0e2e6" }}>
+            {cluster.name} cluster
+          </h3>
+          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#5a5f68", fontWeight: 500, letterSpacing: "0.02em" }}>
+            {cluster.zipoMap} &middot; {cluster.uberMap} &middot; {cluster.boltMap}
+          </p>
+        </div>
+        <span style={{
+          fontSize: 10, fontWeight: 700, background: "#1a1d24", color: "#8a8f98",
+          padding: "4px 10px", borderRadius: 20, letterSpacing: "0.06em", textTransform: "uppercase",
+        }}>
+          Cheapest: {cheapestName}
+        </span>
+      </div>
+
+      {/* 3 fare cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {fares.map(({ m, f }) => (
+          <FareCard key={m.id} model={m} fare={f} cheapest={cheapest} isCheapest={f === cheapest} compact />
+        ))}
+      </div>
+
+      {/* Insight strip */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8,
+        padding: "10px 12px", background: "#0f1116", borderRadius: 8, border: "1px solid #1a1d24",
+      }}>
+        <InsightPill
+          label="Zipo vs Uber"
+          value={zipoVsUber}
+          pct={zipoVsUberPct}
+        />
+        <InsightPill
+          label="Zipo vs Bolt"
+          value={zipoVsBolt}
+          pct={zipoVsBoltPct}
+        />
+        <InsightPill
+          label="Gap vs cheapest"
+          value={zipoFare - cheapest}
+          pct={cheapest > 0 ? ((zipoFare - cheapest) / cheapest) * 100 : 0}
+          muted
+        />
+      </div>
+    </div>
+  );
+}
+
+function InsightPill({ label, value, pct, muted = false }) {
+  // value > 0 = Zipo is cheaper; < 0 = Zipo is more expensive.
+  const cheaper = value > 0.005;
+  const equal = Math.abs(value) < 0.005;
+  const color = equal ? "#8a8f98" : cheaper ? ZIPO : UBER;
+  const prefix = equal ? "Equal" : cheaper ? "Zipo cheaper by" : "Zipo more by";
+  const absV = Math.abs(value);
+  const absP = Math.abs(pct);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontSize: 10, color: "#5a5f68", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>{label}</span>
+      {equal ? (
+        <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: "'JetBrains Mono', monospace" }}>Equal</span>
+      ) : (
+        <span style={{ fontSize: 13, fontWeight: 700, color: muted ? "#8a8f98" : color, fontFamily: "'JetBrains Mono', monospace" }}>
+          {muted ? "" : (cheaper ? "\u2193 " : "\u2191 ")}
+          {"\u00A3"}{fmt(absV)} <span style={{ color: "#5a5f68", fontWeight: 500 }}>({absP.toFixed(1)}%)</span>
+        </span>
+      )}
+      {!muted && !equal && (
+        <span style={{ fontSize: 10, color: "#5a5f68", fontWeight: 500 }}>{prefix} this amount</span>
+      )}
+    </div>
+  );
+}
+
+// ---------- Pricing Editor ----------
+function PricingEditor({ cluster, onUpdateModel }) {
+  const rows = [cluster.models.zipo, cluster.models.uber, cluster.models.bolt];
+  return (
+    <div style={{ ...card }}>
+      <div style={{ marginBottom: 14 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, letterSpacing: "-0.02em", color: "#e0e2e6" }}>
+          {cluster.name}
+        </h3>
+        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#5a5f68", fontWeight: 500 }}>
+          {cluster.zipoMap} &middot; {cluster.uberMap} &middot; {cluster.boltMap}
+        </p>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+        {rows.map((m) => (
+          <div key={m.id} style={{ ...cardSubtle, position: "relative" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: m.color, borderTopLeftRadius: 10, borderTopRightRadius: 10 }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, marginTop: 2 }}>
+              <input
+                value={m.name}
+                onChange={(e) => onUpdateModel(cluster.id, m.platform, "name", e.target.value)}
+                style={{
+                  background: "transparent", border: "none", color: m.color, fontWeight: 800,
+                  fontSize: 15, fontFamily: "inherit", outline: "none", padding: 0, width: "75%",
+                }}
+              />
+              <span style={{
+                fontSize: 9, fontWeight: 700, background: m.color + "18", color: m.color,
+                padding: "3px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase",
+              }}>
+                {platformLabel(m.platform)}
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="Base fare"   value={m.baseFare}   onChange={(v) => onUpdateModel(cluster.id, m.platform, "baseFare",   v)} unit={"\u00A3"} accent={m.color} />
+              <Field label="Per minute"  value={m.perMinute}  onChange={(v) => onUpdateModel(cluster.id, m.platform, "perMinute",  v)} unit={"\u00A3"} accent={m.color} />
+              <Field label="Per mile"    value={m.perMile}    onChange={(v) => onUpdateModel(cluster.id, m.platform, "perMile",    v)} unit={"\u00A3"} accent={m.color} />
+              <Field label="Surge"       value={m.surge}      onChange={(v) => onUpdateModel(cluster.id, m.platform, "surge",      v)} unit="x" step={0.05} accent={m.color} />
+              <Field label="Min fare"    value={m.minFare}    onChange={(v) => onUpdateModel(cluster.id, m.platform, "minFare",    v)} unit={"\u00A3"} accent={m.color} />
+              <Field label="Booking fee" value={m.bookingFee} onChange={(v) => onUpdateModel(cluster.id, m.platform, "bookingFee", v)} unit={"\u00A3"} accent={m.color} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Batch Matrix ----------
+function BatchMatrix({ clusters, trips, activeClusterId }) {
+  const shown = activeClusterId === "all" ? clusters : clusters.filter((c) => c.id === activeClusterId);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {shown.map((cluster) => {
+        // For each trip, compute 3 fares + cheapest.
+        const rows = trips.map((t) => {
+          const z = calcFare(cluster.models.zipo, t.distance, t.duration);
+          const u = calcFare(cluster.models.uber, t.distance, t.duration);
+          const b = calcFare(cluster.models.bolt, t.distance, t.duration);
+          const minV = Math.min(z, u, b);
+          return { trip: t, z, u, b, minV };
+        });
+
+        // Aggregate Zipo win-rate vs each competitor for strategic summary
+        const zipoWinsUber = rows.filter((r) => r.z < r.u).length;
+        const zipoWinsBolt = rows.filter((r) => r.z < r.b).length;
+        const zipoCheapest = rows.filter((r) => r.z === r.minV).length;
+
+        return (
+          <div key={cluster.id} style={{ ...card, overflowX: "auto" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em", color: "#e0e2e6" }}>
+                  {cluster.name} cluster
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#5a5f68", fontWeight: 500 }}>
+                  {cluster.zipoMap} &middot; {cluster.uberMap} &middot; {cluster.boltMap}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <SummaryBadge label="Zipo cheapest" value={`${zipoCheapest}/${rows.length}`} accent={ZIPO} />
+                <SummaryBadge label="vs Uber wins" value={`${zipoWinsUber}/${rows.length}`} />
+                <SummaryBadge label="vs Bolt wins" value={`${zipoWinsBolt}/${rows.length}`} />
+              </div>
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 600 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Trip</th>
+                  <th style={thStyle}>mi</th>
+                  <th style={thStyle}>min</th>
+                  <th style={{ ...thStyle, color: ZIPO }}>{cluster.models.zipo.name}</th>
+                  <th style={{ ...thStyle, color: UBER }}>{cluster.models.uber.name}</th>
+                  <th style={{ ...thStyle, color: BOLT }}>{cluster.models.bolt.name}</th>
+                  <th style={thStyle}>Gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    <td style={tdStyle}>{r.trip.label}</td>
+                    <td style={{ ...tdStyle, fontFamily: "'JetBrains Mono', monospace", color: "#8a8f98" }}>{r.trip.distance}</td>
+                    <td style={{ ...tdStyle, fontFamily: "'JetBrains Mono', monospace", color: "#8a8f98" }}>{r.trip.duration}</td>
+                    <FareCell value={r.z} min={r.minV} color={ZIPO} />
+                    <FareCell value={r.u} min={r.minV} color={UBER} />
+                    <FareCell value={r.b} min={r.minV} color={BOLT} />
+                    <td style={{ ...tdStyle, fontFamily: "'JetBrains Mono', monospace", color: "#5a5f68" }}>
+                      {"\u00A3"}{fmt(Math.max(r.z, r.u, r.b) - r.minV)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FareCell({ value, min, color }) {
+  const isMin = value === min;
+  const deltaPct = min > 0 ? ((value - min) / min) * 100 : 0;
+  return (
+    <td style={{
+      ...tdStyle, fontFamily: "'JetBrains Mono', monospace",
+      fontWeight: isMin ? 800 : 500,
+      color: isMin ? color : "#e0e2e6",
+    }}>
+      {"\u00A3"}{fmt(value)}
+      {!isMin && (
+        <span style={{ fontSize: 10, color: "#F06292", marginLeft: 6 }}>
+          +{deltaPct.toFixed(1)}%
+        </span>
+      )}
+    </td>
+  );
+}
+
+function SummaryBadge({ label, value, accent }) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "flex-start",
+      padding: "4px 10px", background: "#0f1116", border: "1px solid #1a1d24", borderRadius: 6,
+    }}>
+      <span style={{ fontSize: 9, color: "#5a5f68", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 800, color: accent || "#e0e2e6", fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
+    </div>
+  );
+}
+
+// ---------- Top-level summary (all clusters at a glance) ----------
+function TopSummary({ clusters, distance, duration }) {
+  // Across all 5 clusters: in how many is Zipo cheapest?
+  const perCluster = clusters.map((c) => {
+    const z = calcFare(c.models.zipo, distance, duration);
+    const u = calcFare(c.models.uber, distance, duration);
+    const b = calcFare(c.models.bolt, distance, duration);
+    const m = Math.min(z, u, b);
+    return { c, z, u, b, m, zipoCheapest: z === m, saveVsUber: u - z, saveVsBolt: b - z };
+  });
+  const zipoCheapestCount = perCluster.filter((x) => x.zipoCheapest).length;
+  const avgSaveVsUber = perCluster.reduce((a, x) => a + x.saveVsUber, 0) / perCluster.length;
+  const avgSaveVsBolt = perCluster.reduce((a, x) => a + x.saveVsBolt, 0) / perCluster.length;
+
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10,
+      marginBottom: 16,
+    }}>
+      <Stat label="Clusters Zipo wins" value={`${zipoCheapestCount}/${clusters.length}`} accent={ZIPO} />
+      <Stat label="Avg save vs Uber" value={`\u00A3${fmt(avgSaveVsUber)}`} accent={avgSaveVsUber >= 0 ? ZIPO : UBER} />
+      <Stat label="Avg save vs Bolt" value={`\u00A3${fmt(avgSaveVsBolt)}`} accent={avgSaveVsBolt >= 0 ? ZIPO : BOLT} />
+      <Stat label="Trip" value={`${distance} mi / ${duration} min`} />
+    </div>
+  );
+}
+
+function Stat({ label, value, accent }) {
+  return (
+    <div style={{ ...cardSubtle, padding: "12px 14px" }}>
+      <div style={{ fontSize: 10, color: "#5a5f68", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: accent || "#e0e2e6", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Main App ----------
+function App() {
+  const [clusters, setClusters] = useState(() => loadFromStorage(STORAGE_KEY, DEFAULT_CLUSTERS));
+  const [distance, setDistance] = useState(5);
+  const [duration, setDuration] = useState(20);
+  const [mode, setMode] = useState("single"); // single | batch
+  const [activeCluster, setActiveCluster] = useState("all"); // all | cluster.id
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(clusters)); } catch {}
+  }, [clusters]);
+
+  const updateModel = useCallback((clusterId, platform, field, value) => {
+    setClusters((prev) => prev.map((c) => {
+      if (c.id !== clusterId) return c;
+      return {
+        ...c,
+        models: {
+          ...c.models,
+          [platform]: { ...c.models[platform], [field]: value },
+        },
+      };
+    }));
+  }, []);
+
+  const resetAll = useCallback(() => {
+    if (confirm("Reset all pricing models to defaults?")) {
+      setClusters(DEFAULT_CLUSTERS);
+    }
+  }, []);
+
+  // Export CSV — trip scenario, cluster, platform, model, fare, cluster cheapest?, delta vs cluster cheapest
+  const exportCSV = useCallback(() => {
+    const trips = mode === "batch" ? TRIP_PRESETS : [{ label: "Custom Trip", distance, duration }];
+    const shown = activeCluster === "all" ? clusters : clusters.filter((c) => c.id === activeCluster);
+
+    const rows = [[
+      "Trip Scenario", "Distance (mi)", "Duration (min)",
+      "Cluster", "Cluster Mapping", "Platform", "Model",
+      "Fare (GBP)", "Cluster Cheapest", "Delta vs Cheapest (GBP)", "Delta vs Cheapest (%)",
+    ]];
+
+    trips.forEach((t) => {
+      shown.forEach((c) => {
+        const mapping = `${c.zipoMap} | ${c.uberMap} | ${c.boltMap}`;
+        const z = calcFare(c.models.zipo, t.distance, t.duration);
+        const u = calcFare(c.models.uber, t.distance, t.duration);
+        const b = calcFare(c.models.bolt, t.distance, t.duration);
+        const minV = Math.min(z, u, b);
+        [
+          { m: c.models.zipo, f: z },
+          { m: c.models.uber, f: u },
+          { m: c.models.bolt, f: b },
+        ].forEach(({ m, f }) => {
+          const delta = f - minV;
+          const deltaPct = minV > 0 ? (delta / minV) * 100 : 0;
+          rows.push([
+            t.label, t.distance, t.duration,
+            c.name, mapping, platformLabel(m.platform), m.name,
+            fmt(f), f === minV ? "YES" : "NO", fmt(delta), deltaPct.toFixed(2),
+          ]);
+        });
+      });
+    });
+
+    const csv = rows.map((r) => r.map((cell) => {
+      const s = String(cell);
+      return s.includes(",") || s.includes("\"") ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(",")).join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `zipo_fare_strategy_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [clusters, mode, activeCluster, distance, duration]);
+
+  const visibleClusters = useMemo(() => (
+    activeCluster === "all" ? clusters : clusters.filter((c) => c.id === activeCluster)
+  ), [clusters, activeCluster]);
+
+  return (
+    <div style={{ minHeight: "100vh", padding: "24px 16px", maxWidth: 1280, margin: "0 auto" }}>
+
+      {/* ======= HEADER ======= */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{
@@ -161,158 +619,152 @@ function App() {
             fontWeight: 900, fontSize: 16, color: "#fff", letterSpacing: "-0.02em",
           }}>Z</div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1 }}>Zipo Fare Calculator</h1>
-            <p style={{ margin: 0, fontSize: 12, color: "#5a5f68", fontWeight: 500, letterSpacing: "0.04em" }}>INTERNAL SIMULATION TOOL</p>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
+              Zipo Fare Calculator <span style={{ color: ZIPO, fontWeight: 700 }}>(Advanced)</span>
+            </h1>
+            <p style={{ margin: 0, fontSize: 12, color: "#5a5f68", fontWeight: 500, letterSpacing: "0.04em" }}>
+              INTERNAL PRICING STRATEGY TOOL
+            </p>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={exportCSV} style={btnStyle("#1e2128", "#8a8f98")}>Export CSV</button>
-          <button onClick={resetModels} style={btnStyle("#1e2128", "#8a8f98")}>Reset</button>
+          <button onClick={resetAll} style={btnStyle("#1e2128", "#8a8f98")}>Reset Defaults</button>
         </div>
       </div>
 
+      {/* ======= CONTROL PANEL ======= */}
       <div style={{ ...card, marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#8a8f98" }}>Trip Parameters</h2>
+        {/* Mode toggle */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+          <h2 style={sectionLabel}>Analysis Mode</h2>
           <div style={{ display: "flex", gap: 6 }}>
-            {["single", "batch"].map((t) => (
-              <button key={t} onClick={() => setTab(t)} style={{
-                ...btnStyle(tab === t ? "#4DB6AC" : "#1a1d24", tab === t ? "#0c0e12" : "#8a8f98"),
-                fontWeight: tab === t ? 700 : 500, fontSize: 12, padding: "5px 14px",
-              }}>{t === "single" ? "Single Trip" : "Batch Compare"}</button>
+            {[
+              { id: "single", label: "Single Trip" },
+              { id: "batch",  label: "Batch Compare" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setMode(t.id)}
+                style={{
+                  ...btnStyle(mode === t.id ? ZIPO : "#1a1d24", mode === t.id ? "#0c0e12" : "#8a8f98"),
+                  fontWeight: mode === t.id ? 700 : 500, fontSize: 12, padding: "6px 14px",
+                }}
+              >{t.label}</button>
             ))}
           </div>
         </div>
-        {tab === "single" && (
+
+        {/* Category pills */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ ...mutedLabel, marginBottom: 8 }}>Category</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={() => setActiveCluster("all")} style={pillStyle(activeCluster === "all")}>
+              All Categories
+            </button>
+            {clusters.map((c) => (
+              <button key={c.id} onClick={() => setActiveCluster(c.id)} style={pillStyle(activeCluster === c.id)}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Trip inputs (only in single mode) */}
+        {mode === "single" && (
           <React.Fragment>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, marginBottom: 14 }}>
               <Field label="Distance" value={distance} onChange={setDistance} unit="mi" step={0.5} />
               <Field label="Duration" value={duration} onChange={setDuration} unit="min" step={1} />
             </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {PRESETS.map((p) => (
-                <button key={p.label} onClick={() => { setDistance(p.distance); setDuration(p.duration); }}
-                  style={{ ...btnStyle("#1a1d24", "#8a8f98"), fontSize: 11, padding: "5px 12px", borderRadius: 20 }}>
-                  {p.label}
-                </button>
-              ))}
+            <div>
+              <div style={{ ...mutedLabel, marginBottom: 8 }}>Trip Presets</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {TRIP_PRESETS.map((p) => {
+                  const active = distance === p.distance && duration === p.duration;
+                  return (
+                    <button
+                      key={p.label}
+                      onClick={() => { setDistance(p.distance); setDuration(p.duration); }}
+                      style={{
+                        ...btnStyle(active ? "#1e2128" : "#1a1d24", active ? ZIPO : "#8a8f98"),
+                        fontSize: 11, padding: "5px 12px", borderRadius: 20,
+                        border: active ? `1px solid ${ZIPO}44` : "1px solid transparent",
+                      }}
+                      title={`${p.distance} mi / ${p.duration} min`}
+                    >
+                      {p.label}
+                      <span style={{ color: "#5a5f68", marginLeft: 6, fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                        {p.distance}mi
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </React.Fragment>
         )}
-      </div>
 
-      {tab === "batch" && (
-        <div style={{ ...card, marginBottom: 20, overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Trip</th>
-                <th style={thStyle}>mi</th>
-                <th style={thStyle}>min</th>
-                {models.map((m) => <th key={m.id} style={{ ...thStyle, color: m.color }}>{m.name}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {BATCH_TRIPS.map((t, i) => {
-                const fares = models.map((m) => calcFare(m, t.distance, t.duration));
-                const bMin = Math.min(...fares);
-                return (
-                  <tr key={i}>
-                    <td style={tdStyle}>{t.label}</td>
-                    <td style={{ ...tdStyle, fontFamily: "monospace" }}>{t.distance}</td>
-                    <td style={{ ...tdStyle, fontFamily: "monospace" }}>{t.duration}</td>
-                    {fares.map((f, j) => (
-                      <td key={j} style={{
-                        ...tdStyle, fontFamily: "'JetBrains Mono', monospace",
-                        fontWeight: f === bMin ? 800 : 500, color: f === bMin ? "#4DB6AC" : "#e0e2e6",
-                      }}>
-                        {"\u00A3"}{fmt(f)}
-                        {f !== bMin && (
-                          <span style={{ fontSize: 10, color: "#F06292", marginLeft: 6 }}>
-                            +{fmt(((f - bMin) / bMin) * 100)}%
-                          </span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === "single" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 20 }}>
-          {results.map((r) => {
-            const diff = r.fare - cheapest;
-            const pctDiff = cheapest > 0 ? (diff / cheapest) * 100 : 0;
-            const isCheapest = diff === 0;
-            return (
-              <div key={r.id} style={{ ...card, borderColor: isCheapest ? r.color + "44" : "#1e2128", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: r.color }} />
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, marginTop: 4 }}>
-                  <span style={{ fontWeight: 800, fontSize: 16, color: r.color, letterSpacing: "-0.02em" }}>{r.name}</span>
-                  {isCheapest && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, background: r.color + "22", color: r.color,
-                      padding: "3px 10px", borderRadius: 20, letterSpacing: "0.06em", textTransform: "uppercase",
-                    }}>Cheapest</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 36, fontWeight: 900, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.04em", marginBottom: 8 }}>
-                  {"\u00A3"}{fmt(r.fare)}
-                </div>
-                {!isCheapest && (
-                  <div style={{ fontSize: 13, color: "#F06292", fontWeight: 600 }}>
-                    +{"\u00A3"}{fmt(diff)} ({fmt(pctDiff)}% more)
-                  </div>
-                )}
-                {isCheapest && results.length > 1 && (
-                  <div style={{ fontSize: 13, color: "#5a5f68", fontWeight: 500 }}>Lowest fare</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#8a8f98" }}>Pricing Models</h2>
-        <button onClick={addModel} style={btnStyle("#4DB6AC", "#0c0e12")}>+ Add Model</button>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-        {models.map((m) => (
-          <div key={m.id} style={{ ...card, position: "relative" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: m.color }} />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, marginTop: 4 }}>
-              <input value={m.name} onChange={(e) => updateModel(m.id, "name", e.target.value)}
-                style={{
-                  background: "transparent", border: "none", color: m.color, fontWeight: 800,
-                  fontSize: 16, fontFamily: "inherit", outline: "none", padding: 0, width: "60%",
-                }}
-              />
-              {models.length > 1 && (
-                <button onClick={() => removeModel(m.id)}
-                  style={{ background: "transparent", border: "none", color: "#5a5f68", cursor: "pointer", fontSize: 16, padding: "2px 6px", borderRadius: 4, lineHeight: 1 }}
-                  title="Remove model">{"\u00D7"}</button>
-              )}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <Field label="Base fare"   value={m.baseFare}   onChange={(v) => updateModel(m.id, "baseFare", v)}   unit={"\u00A3"} />
-              <Field label="Per minute"  value={m.perMinute}  onChange={(v) => updateModel(m.id, "perMinute", v)}  unit={"\u00A3"} />
-              <Field label="Per mile"    value={m.perMile}    onChange={(v) => updateModel(m.id, "perMile", v)}    unit={"\u00A3"} />
-              <Field label="Surge"       value={m.surge}      onChange={(v) => updateModel(m.id, "surge", v)}      unit="x" step={0.1} />
-              <Field label="Min fare"    value={m.minFare}    onChange={(v) => updateModel(m.id, "minFare", v)}    unit={"\u00A3"} />
-              <Field label="Booking fee" value={m.bookingFee} onChange={(v) => updateModel(m.id, "bookingFee", v)} unit={"\u00A3"} />
-            </div>
+        {mode === "batch" && (
+          <div style={{ padding: "10px 12px", background: "#0f1116", borderRadius: 8, border: "1px solid #1a1d24", fontSize: 12, color: "#8a8f98" }}>
+            Batch mode runs <strong style={{ color: "#e0e2e6" }}>{TRIP_PRESETS.length} preset scenarios</strong> through
+            {" "}{activeCluster === "all" ? "all 5 clusters" : `the ${clusters.find((c) => c.id === activeCluster)?.name} cluster`}.
+            {" "}Ideal for strategy-level comparison across trip profiles.
           </div>
+        )}
+      </div>
+
+      {/* ======= RESULTS ======= */}
+      {mode === "single" && (
+        <React.Fragment>
+          {activeCluster === "all" && (
+            <React.Fragment>
+              <div style={{ marginBottom: 12 }}>
+                <h2 style={sectionLabel}>Overview &mdash; All Clusters</h2>
+              </div>
+              <TopSummary clusters={clusters} distance={distance} duration={duration} />
+            </React.Fragment>
+          )}
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: activeCluster === "all" ? "1fr" : "1fr",
+            gap: 16, marginBottom: 24,
+          }}>
+            {visibleClusters.map((c) => (
+              <ClusterComparison key={c.id} cluster={c} distance={distance} duration={duration} />
+            ))}
+          </div>
+        </React.Fragment>
+      )}
+
+      {mode === "batch" && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={sectionLabel}>Batch Scenario Matrix</h2>
+          </div>
+          <BatchMatrix clusters={clusters} trips={TRIP_PRESETS} activeClusterId={activeCluster} />
+        </div>
+      )}
+
+      {/* ======= PRICING EDITORS ======= */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <h2 style={sectionLabel}>Pricing Models</h2>
+        <span style={{ fontSize: 11, color: "#5a5f68", fontWeight: 500, letterSpacing: "0.02em" }}>
+          {activeCluster === "all" ? "Editing all clusters" : `Editing ${clusters.find((c) => c.id === activeCluster)?.name} only`}
+          {" \u00B7 "}Changes auto-save
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {visibleClusters.map((c) => (
+          <PricingEditor key={c.id} cluster={c} onUpdateModel={updateModel} />
         ))}
       </div>
 
+      {/* ======= FOOTER ======= */}
       <div style={{ textAlign: "center", marginTop: 32, fontSize: 11, color: "#3a3d44", letterSpacing: "0.06em" }}>
-        ZIPO INTERNAL &mdash; NOT FOR DISTRIBUTION
+        ZIPO INTERNAL &mdash; PRICING STRATEGY v2 &mdash; NOT FOR DISTRIBUTION
       </div>
     </div>
   );
